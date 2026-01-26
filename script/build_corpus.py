@@ -1,27 +1,18 @@
-import hashlib
 import json
-import random
-import time
+import re
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
-import requests
-import trafilatura
 import pdfplumber
 from bs4 import BeautifulSoup
 
 
 class CorpusBuilder:
-    """Extraction, découpage (chunking) et préparation du corpus UQAC pour un chatbot RAG."""
+    """Traite les fichiers HTML/PDF bruts et crée le corpus avec chunking pour un chatbot RAG."""
 
     # Paramètres de découpage (chunking)
     CHUNK_SIZE_WORDS = 400
     CHUNK_OVERLAP_WORDS = 60
-
-    # Paramètres réseau
-    TIMEOUT = 15
-    HEADERS = {"User-Agent": "Chatbot-UQAC/1.0"}
-    SLEEP_RANGE_SEC = (1.0, 2.5)  # délai de politesse entre les requêtes
 
     def __init__(self, data_dir: Path | None = None) -> None:
         """Initialise le constructeur de corpus avec les chemins de travail."""
@@ -33,72 +24,53 @@ class CorpusBuilder:
         self.raw_pdf_dir = self.raw_dir / "pdf"
         self.processed_dir = data_dir / "processed"
         self.corpus_path = self.processed_dir / "corpus.jsonl"
-        self.links_path = data_dir / "uqac_gestion_links.txt"
+        self.mapping_path = self.raw_dir / "url_mapping.json"
+        self.url_mapping: Dict[str, str] = {}
 
     def ensure_dirs(self) -> None:
         """Crée les répertoires requis."""
-        for folder in [self.raw_html_dir, self.raw_pdf_dir, self.processed_dir]:
-            folder.mkdir(parents=True, exist_ok=True)
+        self.processed_dir.mkdir(parents=True, exist_ok=True)
 
-    def read_links(self) -> Tuple[List[str], List[str]]:
-        """Lit et sépare les liens HTML et PDF depuis le fichier de liens."""
-        html_links: List[str] = []
-        pdf_links: List[str] = []
-        current = None
+    def load_url_mapping(self) -> None:
+        """Charge le mapping fichier -> URL depuis le fichier JSON."""
+        if self.mapping_path.exists():
+            with self.mapping_path.open("r", encoding="utf-8") as f:
+                self.url_mapping = json.load(f)
+            print(f"Mapping chargé : {len(self.url_mapping)} URLs")
+        else:
+            print(f"[AVERTISSEMENT] Fichier de mapping non trouvé : {self.mapping_path}")
+            print("Les URLs seront au format 'local://nom_fichier'")
 
-        with self.links_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    if "Pages HTML" in line:
-                        current = "html"
-                    elif "Fichiers PDF" in line:
-                        current = "pdf"
-                    continue
-                if current == "html":
-                    html_links.append(line)
-                elif current == "pdf":
-                    pdf_links.append(line)
-        return html_links, pdf_links
-
-    @staticmethod
-    def url_to_name(url: str) -> str:
-        """Génère un nom de fichier stable à partir de l'URL (SHA1)."""
-        return hashlib.sha1(url.encode("utf-8")).hexdigest()
-
-    def polite_sleep(self) -> None:
-        """Attend un court délai aléatoire pour éviter de surcharger le site distant."""
-        time.sleep(random.uniform(*self.SLEEP_RANGE_SEC))
-
-    def download(self, url: str, dest: Path) -> Path | None:
-        """Télécharge l'URL vers le chemin cible. Retourne None en cas d'échec; utilise le cache si déjà présent."""
-        if dest.exists():
-            return dest
-        try:
-            resp = requests.get(url, timeout=self.TIMEOUT, headers=self.HEADERS)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            print(f"[AVERTISSEMENT] échec du téléchargement {url} : {exc}")
-            return None
-        self.polite_sleep()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        mode = "wb" if isinstance(resp.content, (bytes, bytearray)) else "w"
-        with dest.open(mode) as f:
-            f.write(resp.content if mode == "wb" else resp.text)
-        return dest
 
     @staticmethod
     def extract_html(path: Path) -> Tuple[str, str]:
-        """Extrait le titre et le texte d'un fichier HTML"""
+        """Extrait le titre et le texte d'un fichier HTML depuis entry-header et entry-content"""
         text = ""
         title = ""
         raw = path.read_text(encoding="utf-8", errors="ignore")
-        extracted = trafilatura.extract(raw, include_comments=False, include_tables=True)
-        if extracted:
-            text = extracted.strip()
         soup = BeautifulSoup(raw, "html.parser")
+        
+        # Extraire le titre de la balise <title>
         if soup.title and soup.title.string:
             title = soup.title.string.strip()
+        
+        # Extraire le texte des sections entry-header et entry-content
+        text_parts = []
+        
+        for class_name in ["entry-header", "entry-content"]:
+            element = soup.find(class_=class_name)
+            if element:
+                # Supprimer tous les liens mais garder leur texte
+                for link in element.find_all("a"):
+                    link.replace_with(link.get_text())
+                text_parts.append(element.get_text(separator=" ", strip=True))
+        
+        # Combiner les parties et nettoyer
+        text = " ".join(text_parts).strip()
+        
+        # Nettoyer les espaces multiples
+        text = re.sub(r'\s+', ' ', text).strip()
+        
         return title, text
 
     @staticmethod
@@ -139,27 +111,32 @@ class CorpusBuilder:
             for rec in records:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    def _process_links(
+    def get_local_files(self) -> Tuple[List[Path], List[Path]]:
+        """Récupère la liste des fichiers HTML et PDF déjà téléchargés."""
+        html_files = sorted(self.raw_html_dir.glob("*.html"))
+        pdf_files = sorted(self.raw_pdf_dir.glob("*.pdf"))
+        return html_files, pdf_files
+
+    def _process_files(
         self, 
-        urls: List[str],
+        files: List[Path],
         doc_type: str,
-        dest_dir: Path,
         extract_fn) -> List[dict]:
-        """Traite une liste d'URLs : télécharge, extrait et découpe en chunks."""
+        """Traite une liste de fichiers locaux : extrait et découpe en chunks."""
         records = []
-        for url in urls:
-            fname = self.url_to_name(url) + f'.{doc_type}'
-            dest = dest_dir / fname
-            saved = self.download(url, dest)
-            if not saved:
-                continue
-            title, text = extract_fn(saved)
+        for file_path in files:
+            print(f"[TRAITEMENT] {file_path.name}")
+            title, text = extract_fn(file_path)
             if not text:
-                print(f"[AVERTISSEMENT] {doc_type.upper()} vide après extraction {url}")
+                print(f"[AVERTISSEMENT] {doc_type.upper()} vide après extraction {file_path.name}")
                 continue
+            
+            # Récupérer l'URL originale depuis le mapping, sinon utiliser un fallback
+            url = self.url_mapping.get(file_path.name, f"local://{file_path.name}")
+            
             for idx, chunk in enumerate(self.chunk_text(text)):
                 rec = {
-                    "id": f"{doc_type}-{fname}-{idx}",
+                    "id": f"{doc_type}-{file_path.name}-{idx}",
                     "url": url,
                     "type": doc_type,
                     "title": title,
@@ -170,15 +147,20 @@ class CorpusBuilder:
         return records
 
     def build(self) -> None:
-        """Construit le corpus : télécharge, extrait, découpe et écrit tous les documents."""
+        """Construit le corpus à partir des fichiers HTML et PDF déjà téléchargés."""
         self.ensure_dirs()
-        html_links, pdf_links = self.read_links()
+        self.load_url_mapping()
+        html_files, pdf_files = self.get_local_files()
         
+        print(f"\n=== Traitement de {len(html_files)} fichiers HTML ===\n")
         records = []
-        records.extend(self._process_links(html_links, "html", self.raw_html_dir, self.extract_html))
-        records.extend(self._process_links(pdf_links, "pdf", self.raw_pdf_dir, self.extract_pdf))
+        records.extend(self._process_files(html_files, "html", self.extract_html))
+        
+        print(f"\n=== Traitement de {len(pdf_files)} fichiers PDF ===\n")
+        records.extend(self._process_files(pdf_files, "pdf", self.extract_pdf))
 
         self.write_jsonl(records)
+        print(f"\n=== TERMINÉ ===")
         print(f"Corpus généré : {len(records)} segments -> {self.corpus_path}")
 
 
