@@ -60,7 +60,7 @@ def main():
         try:
             shutil.rmtree(DB_DIR)
         except Exception as e:
-            print(f"Impossible de supprimer le dossier DB (peut-être ouvert ?) : {e}")
+            print(f"Impossible de supprimer le dossier DB : {e}")
 
     all_documents = []
     
@@ -80,14 +80,15 @@ def main():
 
     #Si aucun document, on arrête tout
     if len(all_documents) == 0:
-        print("ARRÊT : Aucun document n'a été récupéré. Vérifiez vos liens ou votre connexion.")
+        print("ARRÊT : Aucun document n'a été récupéré.")
         return
 
     # Découpage de sécurité
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000,
-        chunk_overlap=300,
-        separators=["\n\n", "\n", ". ", " ", ""]
+        chunk_size=800,
+        chunk_overlap=150,
+        separators=["\n\n", "\n", ". ", " ", ""],
+        keep_separator=True
     )
     
     final_splits = text_splitter.split_documents(all_documents)
@@ -108,8 +109,8 @@ def main():
         split.page_content = header_block + split.page_content
 
     # Vectorisation
-    print("Création de la base vectorielle...")
-    embeddings = OllamaEmbeddings(model="llama3")
+    print("Création de la base vectorielle.")
+    embeddings = OllamaEmbeddings(model="bge-m3")
     
     # On ajoute try/except pour voir l'erreur exacte si Chroma plante
     try:

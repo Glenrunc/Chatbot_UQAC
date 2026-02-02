@@ -1,49 +1,74 @@
-import langchain_core as lc
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import OllamaEmbeddings
+from langchain_chroma import Chroma
+from langchain_ollama import ChatOllama
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
-
-embeddings = OllamaEmbeddings(model="llama3")
+from langchain_classic.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_classic.retrievers import ContextualCompressionRetriever
+from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
+import logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
+embeddings = OllamaEmbeddings(model="bge-m3")
 vectorstore = Chroma(persist_directory="../data/chroma_db", embedding_function=embeddings)
 
-# nombre de documents à récupérer --> a changer pour un reranking
-retriever = vectorstore.as_retriever(search_kwargs={"k": 14})
+# retriever
+base_retriever = vectorstore.as_retriever(search_kwargs={"k": 40})
 
-# Cette fonction prend les documents trouvés et les transforme en un seul bloc de texte
-# J'inclut l'URL dans le texte pour que le LLM puisse la citer
-def format_docs(docs):
-    formatted_content = []
-    for doc in docs:
-        content = f"Source: {doc.metadata.get('source', 'Inconnue')}\nContenu: {doc.page_content}"
-        formatted_content.append(content)
-    return "\n\n---\n\n".join(formatted_content)
+# reranker
+compressor = FlashrankRerank(
+    model="ms-marco-MultiBERT-L-12",
+    top_n=8
+)
 
-# LE PROMPT
-template_text = '''
-Tu es un assistant visant à guider les utilisateurs. Utilise le contexte ci-dessous.
+compression_retriever = ContextualCompressionRetriever(
+    base_compressor=compressor,
+    base_retriever=base_retriever
+)
 
-Contexte (incluant les sources) :
-{context}
 
-Instructions :
+# la mémoire
+history_system_prompt = """Compte tenu de l'historique de la conversation et de la dernière question de l'utilisateur 
+(qui peut faire référence au contexte passé), formule une question autonome 
+qui peut être comprise sans l'historique de la conversation. 
+Ne réponds PAS à la question, reformule-la simplement si nécessaire en FRANÇAIS, 
+sinon renvoie-la telle quelle."""
+
+history_prompt = ChatPromptTemplate.from_messages([
+    ("system", history_system_prompt),
+    ("placeholder", "{chat_history}"),
+    ("human", "{input}"),
+    ]
+)
+
+qa_system_prompt = """Tu es un assistant expert chargé de guider les utilisateurs. 
+Utilise les documents suivants pour répondre. Si tu ne sais pas, dis-le.
+
+Instructions strictes :
 1. Fais un court résumé.
-2. Fournis le lien vers la documentation (trouvé dans le contexte sous "Source").
+2. Source : Copie le lien EXACTEMENT tel qu'il apparaît dans "Source" dans le contexte. 
+   Ne modifie rien (pas d'accents, pas de correction).
 3. Réponse concise en français.
+
+Contexte :
+{context}
 
 Format :
 {{user: <question>
 assistant: <réponse + lien>}}
+"""
 
-Question de l'utilisateur : {user_input} 
-'''
-
-prompt = PromptTemplate(
-    input_variables=["context", "user_input"],
-    template=template_text
+qa_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", qa_system_prompt),
+        ("placeholder", "{chat_history}"),
+        ("human", "{input}"),
+    ]
 )
+
+
 
 llm = ChatOllama(
     model="llama3",
@@ -52,35 +77,57 @@ llm = ChatOllama(
 )
 
 # CHAÎNE RAG
-rag_chain = (
-    # Préparation des entrées
-    # "context" est rempli par : Question -> Retriever -> Documents -> format_docs
-    # "user_input" est rempli par : Question (passée directement)
-    {"context": retriever | format_docs, "user_input": RunnablePassthrough()} 
-    | 
-    # Le Prompt
-    prompt 
-    | 
-    # Le LLM
-    llm 
-    | 
-    # Nettoyage de la sortie (String pur)
-    StrOutputParser()
+history_aware_retriever = create_history_aware_retriever(
+    llm, 
+    compression_retriever, 
+    history_prompt
 )
 
-question = "Quelle est la procédure relative à la location d'espace ?"
-print(f"Question : {question}\n")
+# Chaîne de réponse
+document_prompt = PromptTemplate(
+    input_variables=["page_content", "source"],
+    template="Source: {source}\nContenu: {page_content}"
+)
+question_answer_chain = create_stuff_documents_chain(llm, qa_prompt, document_prompt=document_prompt)
 
-# TOP 20 DOCUMENTS
-# Cela permet de voir si la réponse se trouve dans les documents récupérés
-top_docs = vectorstore.similarity_search(question, k=20)
-for i, doc in enumerate(top_docs):
-    source = doc.metadata.get("source", "N/A")
-    clean_content = doc.page_content.replace("\n", " ")[:150]
-    print(f"[{i+1}] Source: {source}")
-    print(f"      Extrait: {clean_content}...\n")
+# Chaîne globale (Recherche + Réponse)
+rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
-print("-" * 40 + "\n")
+# Gestion de la session
+store = {}
 
-reponse = rag_chain.invoke(question)
-print(reponse)
+def get_session_history(session_id: str):
+    if session_id not in store:
+        store[session_id] = ChatMessageHistory()
+    return store[session_id]
+
+# La chaîne finale appelable
+conversational_rag_chain = RunnableWithMessageHistory(
+    rag_chain,
+    get_session_history,
+    input_messages_key="input",
+    history_messages_key="chat_history",
+    output_messages_key="answer",
+)
+
+
+# Simulation d'une conversation
+session_id = "session_test_1"
+
+question1 = "Quel est la responsabilité du doyen des études ?"
+print(f"MOI: {question1}")
+
+reponse1 = conversational_rag_chain.invoke(
+    {"input": question1},
+    config={"configurable": {"session_id": session_id}}
+)
+print(f"AI: {reponse1['answer']}\n")
+
+question2 = "Et qui est son supérieur ?" # check si la memoire fonctionne 
+print(f"MOI: {question2}")
+
+reponse2 = conversational_rag_chain.invoke(
+    {"input": question2},
+    config={"configurable": {"session_id": session_id}}
+)
+print(f"AI: {reponse2['answer']}")
