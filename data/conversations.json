@@ -1,0 +1,33 @@
+{
+  "00993e62-a60f-40eb-b68e-64a61d69c566": {
+    "title": "Quels sont les critères d'admission ?",
+    "date": "2026-02-07T15:53:50.860558",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Quels sont les critères d'admission ?"
+      },
+      {
+        "role": "assistant",
+        "content": "<think>\nOkay, the user is asking about the admission criteria for the UQAC. Let me check the provided documents.\n\nFirst, the sources mention different bases for admission. For the first cycle, there are four bases: DEC, Études hors Québec, Études universitaires, and Préparation suffisante. Each has specific requirements. For example, DEC requires a high school diploma, while Études universitaires need at least 15 university credits. \n\nThen, for higher cycles, the bases are Études universitaires, Études hors Québec, and Préparation suffisante. The Études universitaires require a bachelor's degree or equivalent. There's also mention of conditional admission, where candidates might need to meet certain conditions like completing specific courses or achieving a minimum GPA. \n\nThe documents also talk about additional criteria like academic transcripts, interviews, portfolios, and specific course requirements. For instance, some programs might require a minimum GPA of 2.5/4.3 for higher cycles. \n\nI need to structure the answer clearly, separating first cycle and higher cycles, and mention the different bases and any additional criteria. Make sure it's concise and in French.\n</think>\n\n[THINKING]  \nLes critères d'admission à l'UQAC varient selon le cycle (premier ou supérieur) et les bases d'admission définies. Au premier cycle, les bases incluent le DEC, les études hors Québec, les études universitaires (15 crédits) et la préparation suffisante (expérience et connaissances pertinentes). Aux cycles supérieurs, les bases sont les études universitaires (baccalauréat ou équivalent), les études hors Québec (16 années de scolarité) et la préparation suffisante. Des conditions spécifiques, comme des seuils de moyennes (2,5/4,3 aux cycles supérieurs) ou des cours d'appoint, peuvent être imposés.  \n\n[ANSWER]  \nLes critères d'admission dépendent du cycle :  \n- **Premier cycle** : DEC, études hors Québec, études universitaires (15 crédits) ou préparation suffisante.  \n- **Cycles supérieurs** : Études universitaires (baccalauréat ou équivalent), études hors Québec (16 années de scolarité) ou préparation suffisante.  \nDes conditions supplémentaires (ex. seuils de moyennes, cours d'appoint) peuvent s'appliquer.",
+        "thinking": "Okay, the user is asking about the admission criteria for the UQAC. Let me check the provided documents.\n\nFirst, the sources mention different bases for admission. For the first cycle, there are four bases: DEC, Études hors Québec, Études universitaires, and Préparation suffisante. Each has specific requirements. For example, DEC requires a high school diploma, while Études universitaires need at least 15 university credits. \n\nThen, for higher cycles, the bases are Études universitaires, Études hors Québec, and Préparation suffisante. The Études universitaires require a bachelor's degree or equivalent. There's also mention of conditional admission, where candidates might need to meet certain conditions like completing specific courses or achieving a minimum GPA. \n\nThe documents also talk about additional criteria like academic transcripts, interviews, portfolios, and specific course requirements. For instance, some programs might require a minimum GPA of 2.5/4.3 for higher cycles. \n\nI need to structure the answer clearly, separating first cycle and higher cycles, and mention the different bases and any additional criteria. Make sure it's concise and in French.\n\n\n  \nLes critères d'admission à l'UQAC varient selon le cycle (premier ou supérieur) et les bases d'admission définies. Au premier cycle, les bases incluent le DEC, les études hors Québec, les études universitaires (15 crédits) et la préparation suffisante (expérience et connaissances pertinentes). Aux cycles supérieurs, les bases sont les études universitaires (baccalauréat ou équivalent), les études hors Québec (16 années de scolarité) et la préparation suffisante. Des conditions spécifiques, comme des seuils de moyennes (2,5/4,3 aux cycles supérieurs) ou des cours d'appoint, peuvent être imposés.",
+        "answer": "Les critères d'admission dépendent du cycle :  \n- **Premier cycle** : DEC, études hors Québec, études universitaires (15 crédits) ou préparation suffisante.  \n- **Cycles supérieurs** : Études universitaires (baccalauréat ou équivalent), études hors Québec (16 années de scolarité) ou préparation suffisante.  \nDes conditions supplémentaires (ex. seuils de moyennes, cours d'appoint) peuvent s'appliquer.",
+        "sources": [
+          {
+            "url": "https://www.uqac.ca/mgestion/chapitre-3/reglement-sur-les-programmes-detudes/",
+            "title": "Règlement relatif aux études"
+          },
+          {
+            "url": "https://www.uqac.ca/mgestion/chapitre-3/reglement-sur-les-programmes-detudes/politique-relative-a-ladmission/",
+            "title": "Politique relative à l’admission"
+          }
+        ]
+      }
+    ]
+  },
+  "870fe0c8-fbf7-422d-a554-6310f628bc69": {
+    "title": "",
+    "date": "2026-02-07T16:03:26.890646",
+    "messages": []
+  }
+}
