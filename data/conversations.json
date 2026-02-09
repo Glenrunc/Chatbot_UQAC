@@ -26,8 +26,13 @@
     ]
   },
   "870fe0c8-fbf7-422d-a554-6310f628bc69": {
-    "title": "",
+    "title": "Quels sont les critères d'admission ?",
     "date": "2026-02-07T16:03:26.890646",
-    "messages": []
+    "messages": [
+      {
+        "role": "user",
+        "content": "Quels sont les critères d'admission ?"
+      }
+    ]
   }
 }

@@ -32,7 +32,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Load custom CSS
 def load_css():
     """Charge le fichier CSS externe."""
     css_path = Path(__file__).resolve().parent / "style.css"
@@ -41,7 +40,6 @@ def load_css():
             css_content = f.read()
         st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
 
-# Apply custom CSS
 load_css()
 
 
@@ -102,7 +100,7 @@ def save_conversations():
                 "messages": conv_data["messages"]
             }
         
-        # Créer le dossier data si nécessaire
+        # Créer le dossier data si absent
         CONVERSATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
         
         # Sauvegarder
@@ -163,7 +161,7 @@ def parse_thinking_answer(text: str) -> Tuple[str, str]:
         thinking = parts[0].replace("[THINKING]", "").strip()
         answer = parts[1].strip()
     
-    # Cas 2 : Seulement [THINKING], séparer au double saut de ligne
+    # Cas 2 : Seulement [THINKING]
     elif "[THINKING]" in text:
         remaining = text.split("[THINKING]", 1)[1].strip()
         if "\n\n" in remaining:
@@ -172,7 +170,7 @@ def parse_thinking_answer(text: str) -> Tuple[str, str]:
             thinking = remaining
             answer = ""
     
-    # Cas 3 : Détection automatique si patterns de thinking détectés
+    # Cas 3 : Détection automatique si on détecte des patterns de thinking dans la réponse
     else:
         thinking_patterns = ["okay, the user", "let me start", "first, i need", "wait,", "i should"]
         if any(pattern in text.lower() for pattern in thinking_patterns):
@@ -190,7 +188,6 @@ def parse_thinking_answer(text: str) -> Tuple[str, str]:
     return thinking, answer
 
 
-# Session state init
 if "conversations" not in st.session_state:
     # Charger les conversations sauvegardées ou créer une nouvelle
     loaded_conversations = load_conversations()
@@ -226,7 +223,6 @@ if "pending_prompt" not in st.session_state:
 if "chat_histories" not in st.session_state:
     st.session_state.chat_histories = {}
 
-# Raccourcis vers la conversation actuelle
 if "session_id" not in st.session_state:
     st.session_state.session_id = st.session_state.current_conversation_id
 else:
@@ -236,12 +232,12 @@ st.session_state.messages = st.session_state.conversations[st.session_state.curr
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 🎓 Chatbot UQAC")
+    st.markdown("### Chatbot UQAC")
     st.markdown("Assistant basé sur le **manuel de gestion** de l'UQAC.")
     st.divider()
     
     # Bouton nouvelle conversation
-    if st.button("➕ Nouvelle conversation", use_container_width=True):
+    if st.button("Nouvelle conversation", use_container_width=True):
         # Supprimer la plus ancienne si on atteint la limite
         remove_oldest_conversation()
         
@@ -260,7 +256,7 @@ with st.sidebar:
     st.divider()
     
     # Liste des conversations
-    st.markdown("**💬 Historique**")
+    st.markdown("**Historique**")
     
     # Trier les conversations par date (plus récentes en premier)
     sorted_convs = sorted(
@@ -307,9 +303,9 @@ with st.sidebar:
     st.caption(f"Modèle : {MODEL_LLM} — Embeddings : {MODEL_EMBEDDING}")
     st.caption(f"Reranker : {MODEL_RERANKER}")
 
-# Main area
+
 if not st.session_state.messages:
-    st.markdown("# 🎓 Chatbot UQAC")
+    st.markdown("# Chatbot UQAC")
     st.markdown(
         '<p class="subtitle">Posez vos questions sur le manuel de gestion de l\'UQAC</p>',
         unsafe_allow_html=True,
@@ -332,7 +328,7 @@ if not st.session_state.messages:
                 st.session_state.pending_prompt = full_prompt
                 st.rerun()
 
-# Display chat history
+# Historique de la conversation
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar="🧑‍🎓" if msg["role"] == "user" else "🎓"):
         if msg["role"] == "user":
@@ -354,10 +350,10 @@ for msg in st.session_state.messages:
                     for j, src in enumerate(msg["sources"], 1):
                         st.markdown(f"**{j}. {src['title']}**  \n{src['url']}")
 
-# Chat input
+# Saisie de la question
 prompt = None
 
-# Check for pending prompt from suggestions
+# Vérifier s'il y a une question en attente depuis les suggestions
 if st.session_state.pending_prompt:
     prompt = st.session_state.pending_prompt
     st.session_state.pending_prompt = None
@@ -371,14 +367,14 @@ if prompt:
         title = prompt[:50] + ("..." if len(prompt) > 50 else "")
         st.session_state.conversations[st.session_state.current_conversation_id]["title"] = title
     
-    # Add user message
+    # Ajouter le message de l'utilisateur
     st.session_state.messages.append({"role": "user", "content": prompt})
     save_conversations()
     
     with st.chat_message("user", avatar="🧑‍🎓"):
         st.markdown(prompt)
 
-    # Build chain (cached)
+    # Construire la chaîne RAG avec l'historique de la session
     rag_chain = get_rag_chain()
     conversational_chain = RunnableWithMessageHistory(
         rag_chain,
@@ -388,7 +384,7 @@ if prompt:
         output_messages_key="answer",
     )
 
-    # Generate answer with streaming
+    # Générer la réponse en streaming
     with st.chat_message("assistant", avatar="🎓"):
         # Containers pour l'affichage progressif
         thinking_container = st.empty()
@@ -448,7 +444,7 @@ if prompt:
         # Parser la réponse finale
         thinking, answer = parse_thinking_answer(full_answer)
         
-        # Affichage final (si pas déjà fait)
+        # Affichage final
         if not in_answer and not in_thinking:
             if thinking:
                 preview = truncate_title(thinking, THINKING_PREVIEW_LENGTH)
@@ -466,7 +462,6 @@ if prompt:
                 for j, src in enumerate(sources, 1):
                     st.markdown(f"**{j}. {src['title']}**  \n{src['url']}")
 
-    # Save assistant message
     st.session_state.messages.append(
         {"role": "assistant", "content": full_answer, "thinking": thinking, "answer": answer, "sources": sources}
     )
